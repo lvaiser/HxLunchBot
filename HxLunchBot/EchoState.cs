@@ -1,4 +1,6 @@
-﻿namespace HxLunchBot
+﻿using HxLunchBot.Models;
+
+namespace HxLunchBot
 {
     /// <summary>
     /// Class for storing conversation state. 
@@ -6,5 +8,7 @@
     public class EchoState
     {
         public int TurnCount { get; set; } = 0;
+
+        public Voto Voto { get; set; }
     }
 }

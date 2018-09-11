@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using HxLunchBot.Models;
+using System.Collections.Generic;
 
 namespace HxLunchBot
 {
@@ -16,6 +17,8 @@ namespace HxLunchBot
     {
         /// <summary>Property for storing dialog state.</summary>
         public Dictionary<string, object> DialogState { get; set; } = new Dictionary<string, object>();
+
+        public Voto Voto { get; set; }
 
         public int TurnCount { get; set; } = 0;
     }

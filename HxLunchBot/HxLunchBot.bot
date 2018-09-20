@@ -1,14 +1,18 @@
 {
-  "name": "HxLunchBot",
-  "secretKey": "",
-  "services": [
-    {
-      "appId": "",
-      "id": "http://localhost:3978/api/messages",
-      "type": "endpoint",
-      "appPassword": "",
-      "endpoint": "http://localhost:3978/api/messages",
-      "name": "HxLunchBot"
-    }
-  ]
+    "name": "HxLunchBot",
+    "description": "",
+    "services": [
+        {
+            "type": "endpoint",
+            "appId": "aa2bbaca-e242-44f4-ad88-8db1fc605292",
+            "appPassword": "mpbbFBFT209$)}^kwyNDG49",
+            "endpoint": "http://localhost:3978/api/messages",
+            "id": "http://localhost:3978/api/messages",
+            "name": "HxLunchBot"
+        }
+    ],
+    "secretKey": "",
+    "version": "2.0",
+    "overrides": null,
+    "path": "C:\\Projects\\HxLunchBot\\HxLunchBot\\HxLunchBot.bot"
 }

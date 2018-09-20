@@ -7,8 +7,6 @@ namespace HxLunchBot.Models
 {
     public class Voto
     {
-        public Guid Id { get; set; }
-
         public string Votante { get; set; }
 
         public DateTime Fecha { get; set; }
@@ -17,11 +15,8 @@ namespace HxLunchBot.Models
 
         public int OpcionBanneada { get; set; }
 
-        public bool IsRegistrado { get; set; }
-
         public Voto(string votante)
         {
-            this.Id = new Guid();
             this.Votante = votante;
         }
     }

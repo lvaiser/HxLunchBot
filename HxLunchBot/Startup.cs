@@ -42,7 +42,7 @@ namespace HxLunchBot
                 options.Middleware.Add(new CatchExceptionMiddleware<Exception>(async (context, exception) =>
                 {
                     await context.TraceActivity("EchoBot Exception", exception);
-                    await context.SendActivity("Sorry, it looks like something went wrong!");
+                    await context.SendActivity("Perdón, no pude procesar el ultimo mensaje!");
                 }));
 
                 // The Memory Storage used here is for local bot debugging only. When the bot

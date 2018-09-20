@@ -3,10 +3,13 @@ using Microsoft.Bot.Builder.Core.Extensions;
 using Microsoft.Bot.Builder.Dialogs;
 using Microsoft.Bot.Builder.Prompts.Choices;
 using Microsoft.Bot.Schema;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading.Tasks;
 
 namespace HxLunchBot.Dialogs
@@ -15,10 +18,13 @@ namespace HxLunchBot.Dialogs
     {
         public const string Name = "mainDialog";
 
+        private DBClient _client;
+
         /// <summary>Contains the IDs for the other dialogs in the set.</summary>
         private static class Dialogs
         {
             public const string Vote = "vote";
+            public const string VoteCount = "voteCount";
             public const string Ban = "ban";
         }
 
@@ -34,11 +40,16 @@ namespace HxLunchBot.Dialogs
             public const string BannedOption = "bannedOption";
         }
 
-        private class ChoiceOption
+        private List<Choice> ConvertToVoteChoices(IEnumerable<Restaurant> restaurants)
         {
-            public string Name { get; set; }
+            return ChoiceFactory.ToChoices(restaurants.Select(x => x.Nombre).ToList());
+        }
 
-            public string DisplayName { get; set; }
+        private Activity GetVoteReprompt(IList<string> voteList)
+        {
+                var reprompt = MessageFactory.SuggestedActions(voteList, "¿A dónde querés ir?");
+                reprompt.AttachmentLayout = AttachmentLayoutTypes.List;
+                return reprompt as Activity;
         }
 
         /// <summary>Contains the lists used to present options to the guest.</summary>
@@ -50,79 +61,128 @@ namespace HxLunchBot.Dialogs
                 new Choice { Value = "No", Synonyms = new List<string> { "N" }  }
             };
 
-            /// <summary>The options for the top-level dialog.</summary>
-            public static List<ChoiceOption> VoteOptions { get; } = new List<ChoiceOption>
-            {
-                new ChoiceOption { Name = "CampoBravo", DisplayName = "1) CampoBravo" },
-                new ChoiceOption { Name = "El Estanciero", DisplayName = "2) El Estanciero" },
-                new ChoiceOption { Name = "Almacén & Co", DisplayName = "3) Almacén & Co" }
-            };
-
             public static List<string> YesNoList = YesNoOptions.Select(x => x.Value).ToList();
-
-            public static List<string> VoteList = VoteOptions.Select(x => x.DisplayName).ToList();
 
             public static List<Choice> YesNoChoices { get; } = ChoiceFactory.ToChoices(YesNoList);
 
-            public static List<Choice> VoteChoices { get; } = ChoiceFactory.ToChoices(VoteList);
-
-            public static Activity VoteReprompt
+            public static List<Choice> MenuChoices { get; } = new List<Choice>
             {
-                get
-                {
-                    var reprompt = MessageFactory.SuggestedActions(VoteList, "¿A dónde querés ir?");
-                    reprompt.AttachmentLayout = AttachmentLayoutTypes.List;
-                    return reprompt as Activity;
-                }
-            }
+                new Choice { Value = "Votar" },
+                new Choice { Value = "Recuento" },
+                new Choice { Value = "Salir" }
+            };
         }
 
-        private async Task WelcomeStep(DialogContext dc, IDictionary<string, object> args, SkipStepFunction next)
+        public MainDialog()
         {
-            await dc.Prompt(Inputs.Choice, $"Buen día {dc.Context.Activity.From.Name}, ¿Salimos a almorzar hoy?", new ChoicePromptOptions()
+            _client = new DBClient();
+
+            Add(Inputs.Choice, new ChoicePrompt(Microsoft.Recognizers.Text.Culture.Spanish));
+            Add(Name, new WaterfallStep[]
             {
-                Choices = Lists.YesNoChoices,
-                RetryPromptActivity =
-                    MessageFactory.SuggestedActions(Lists.YesNoList, "¿Salimos a almorzar hoy?") as Activity
+                MenuStep,
+                MenuProcessStep
+            });
+            Add(Dialogs.Vote, new WaterfallStep[]
+            {
+                VotePromptStep,
+                VoteProcessStep,
+                RegisterVoteStep
+            });
+            Add(Dialogs.VoteCount, new WaterfallStep[]
+            {
+                VoteCountStep
+            });
+            Add(Dialogs.Ban, new WaterfallStep[]
+            {
+                BanConfirmStep,
+                BanPromptStep,
+                BanProcessStep
             });
         }
 
-        private async Task ConfirmLunchStep(DialogContext dc, IDictionary<string, object> args, SkipStepFunction next)
+        private async Task MenuStep(DialogContext dc, IDictionary<string, object> args, SkipStepFunction next)
         {
-            var yesNo = (FoundChoice)args["Value"];
-            if (yesNo.Index == 0)
+            await dc.Prompt(Inputs.Choice, $"Buen día {dc.Context.Activity.From.Name}, por favor seleccioná una opción:", new ChoicePromptOptions()
             {
-                await dc.Begin(Dialogs.Vote, dc.ActiveDialog.State);
-            }
-            else
+                Choices = Lists.MenuChoices,
+                RetryPromptActivity =
+                    MessageFactory.SuggestedActions(Lists.MenuChoices.Select(x => x.Value).ToList(), "Por favor seleccioná una opción:") as Activity
+            });
+        }
+
+        private async Task MenuProcessStep(DialogContext dc, IDictionary<string, object> args, SkipStepFunction next)
+        {
+            var menuChoice = (FoundChoice)args["Value"];
+            switch (menuChoice.Index)
             {
-                await dc.Context.SendActivity("¡Qué lástima! Si te arrepentís avisame, tenés tiempo hasta las 12:30 PM.");
-                await dc.End();
+                case 0:
+                    await dc.Begin(Dialogs.Vote, dc.ActiveDialog.State);
+                    break;
+                case 1:
+                    await dc.Begin(Dialogs.VoteCount, dc.ActiveDialog.State);
+                    break;
+                default:
+                    await dc.Context.SendActivity("¡Hasta la próxima!");
+                    await dc.End();
+                    break;
             }
         }
 
         private async Task VotePromptStep(DialogContext dc, IDictionary<string, object> args, SkipStepFunction next)
         {
-            var state = dc.Context.GetConversationState<ConversationData>();
-            state.Voto = new Voto(dc.Context.Activity.From.Id);
+            //var votoDelDia = await _client.GetVotoDelDiaPorUsuario(dc.Context.Activity.From.Id);
 
-            await dc.Prompt(Inputs.Choice, "¡Buenísimo! ¿A dónde querés ir?", new ChoicePromptOptions()
-            {
-                Choices = Lists.VoteChoices,
-                RetryPromptActivity = Lists.VoteReprompt
-            });
+            //if (votoDelDia != null)
+            //{
+            //    await dc.Context.SendActivity("Ya votaste hoy! ¬¬");
+            //    await dc.End();
+            //}
+            //else
+            //{
+                var state = dc.Context.GetConversationState<ConversationData>();
+                state.Voto = new Voto(dc.Context.Activity.From.Id);
+                state.Restaurants = await _client.GetRestaurants();
+
+                var choices = this.ConvertToVoteChoices(state.Restaurants);
+
+                await dc.Prompt(Inputs.Choice, "¡Buenísimo! ¿A dónde querés ir?", new ChoicePromptOptions()
+                {
+                    Choices = choices,
+                    RetryPromptActivity = this.GetVoteReprompt(state.Restaurants.Select(x => x.Nombre).ToList())
+                });
+            //}
         }
 
         private async Task VoteProcessStep(DialogContext dc, IDictionary<string, object> args, SkipStepFunction next)
         {
-            var choice = (FoundChoice)args["Value"];
-            var vote = Lists.VoteOptions[choice.Index];
-
             var state = dc.Context.GetConversationState<ConversationData>();
+
+            var choice = (FoundChoice)args["Value"];
+            var voto = state.Restaurants.ToList()[choice.Index];
+
             state.Voto.OpcionVotada = choice.Index;
 
-            await dc.Context.SendActivity($"¡{vote.Name}! ¡Gran elección!");
+            await dc.Context.SendActivity($"¡{voto.Nombre}! ¡Gran elección!");
             await dc.Begin(Dialogs.Ban, dc.ActiveDialog.State);
+        }
+
+        private async Task VoteCountStep(DialogContext dc, IDictionary<string, object> args, SkipStepFunction next)
+        {
+            string recuento = string.Empty;
+            var restaurants = await _client.GetRestaurants();
+
+            var votosDict = await _client.GetVotosDelDia();
+            var votos = votosDict.Select(x => x.Value).GroupBy(x => x.OpcionVotada);
+
+            for (int i = 0; i < restaurants.Count(); i++)
+            {
+                var cantVotos = votos.SingleOrDefault(x => x.Key == i)?.Count() ?? 0;
+                recuento += $"{restaurants[i].Nombre}: {cantVotos}\n";
+            }
+
+            await dc.Context.SendActivity(recuento);
+            await dc.Begin(Name, dc.ActiveDialog.State);
         }
 
         private async Task BanConfirmStep(DialogContext dc, IDictionary<string, object> args, SkipStepFunction next)
@@ -137,64 +197,54 @@ namespace HxLunchBot.Dialogs
 
         private async Task BanPromptStep(DialogContext dc, IDictionary<string, object> args, SkipStepFunction next)
         {
+            var state = dc.Context.GetConversationState<ConversationData>();
+
             var yesNo = (FoundChoice)args["Value"];
             if (yesNo.Index == 0)
             {
                 await dc.Prompt(Inputs.Choice, "¡Maquiavélico! ¿Cuál querés bannear?", new ChoicePromptOptions()
                 {
-                    Choices = Lists.VoteChoices,
+                    Choices = this.ConvertToVoteChoices(state.Restaurants),
                     RetryPromptActivity =
-                        MessageFactory.SuggestedActions(Lists.VoteList, "¿Cuál querés bannear?") as Activity
+                        MessageFactory.SuggestedActions(
+                            state.Restaurants.Select(x => x.Nombre).ToList(), 
+                            "¿Cuál querés bannear?") as Activity
                 });
             }
             else
             {
+                state.Voto.OpcionBanneada = -1;
                 await dc.End();
             }
         }
 
         private async Task BanProcessStep(DialogContext dc, IDictionary<string, object> args, SkipStepFunction next)
         {
-            var choice = (FoundChoice)args["Value"];
-            var vote = Lists.VoteOptions[choice.Index];
-
             var state = dc.Context.GetConversationState<ConversationData>();
+
+            var choice = (FoundChoice)args["Value"];
+            var voto = state.Restaurants.ToList()[choice.Index];
+
             state.Voto.OpcionBanneada = choice.Index;
 
-            await dc.Context.SendActivity($"¡{vote.Name} OUT!");
+            await dc.Context.SendActivity($"¡{voto.Nombre} OUT!");
             await dc.End();
         }
 
         private async Task RegisterVoteStep(DialogContext dc, IDictionary<string, object> args, SkipStepFunction next)
         {
+            var state = dc.Context.GetConversationState<ConversationData>();
+
             // guardar voto
-            var voto = dc.Context.GetConversationState<ConversationData>().Voto;
+            var voto = state.Voto;
+            voto.Fecha = DateTime.Today;
+            await _client.SaveVoto(voto);
 
-            await dc.Context.SendActivity($"Tu voto a {Lists.VoteOptions[voto.OpcionVotada].Name} ya fue registrado.\n" +
-                    $"Hasta ahora somos <cant personas>. A las <hora limite> anunciamos al ganador. Suerte!");
+            await dc.Context.SendActivity($"Tu voto a {state.Restaurants.ToList()[voto.OpcionVotada].Nombre} ya fue registrado.\n" +
+                //$"Hasta ahora somos <cant personas>. A las <hora limite> anunciamos al ganador. Suerte!");
+                "Suerte!");
+
             await dc.End();
-        }
-
-        public MainDialog()
-        {
-            Add(Inputs.Choice, new ChoicePrompt(Microsoft.Recognizers.Text.Culture.Spanish));
-            Add(Name, new WaterfallStep[]
-            {
-                WelcomeStep,
-                ConfirmLunchStep
-            });
-            Add(Dialogs.Vote, new WaterfallStep[]
-            {
-                VotePromptStep,
-                VoteProcessStep,
-                RegisterVoteStep
-            });
-            Add(Dialogs.Ban, new WaterfallStep[]
-            {
-                BanConfirmStep,
-                BanPromptStep,
-                BanProcessStep
-            });
-        }
+        }    
     }
 }

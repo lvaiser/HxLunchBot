@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using HxLunchBot.Dialogs;
@@ -28,7 +29,19 @@ namespace HxLunchBot
 
             var dc = LunchVote.CreateContext(context, state.DialogState);
 
-            // This bot is only handling Messages
+            //if (context.Activity.Type == ActivityTypes.ConversationUpdate
+            //    && context.Activity.MembersAdded != null && context.Activity.MembersAdded.Any())
+            //{
+            //    foreach (var newMember in context.Activity.MembersAdded)
+            //    {
+            //        if (newMember.Id != context.Activity.Recipient.Id)
+            //        {
+            //            await dc.Begin(MainDialog.Name);
+            //        }
+            //    }
+            //}
+            //// This bot is only handling Messages
+            //else
             if (context.Activity.Type == ActivityTypes.Message)
             {
                 // Bump the turn count. 

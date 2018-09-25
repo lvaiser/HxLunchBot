@@ -17,7 +17,7 @@ namespace HxLunchBot
         {
             _client = new HttpClient()
             {
-                BaseAddress = new Uri("https://hxlunchbot.firebaseio.com")
+                BaseAddress = new Uri(Environment.GetEnvironmentVariable("DatabaseEndpoint"))
             };
         }
 

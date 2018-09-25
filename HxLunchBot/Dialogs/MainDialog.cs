@@ -131,15 +131,15 @@ namespace HxLunchBot.Dialogs
 
         private async Task VotePromptStep(DialogContext dc, IDictionary<string, object> args, SkipStepFunction next)
         {
-            //var votoDelDia = await _client.GetVotoDelDiaPorUsuario(dc.Context.Activity.From.Id);
+            var votoDelDia = await _client.GetVotoDelDiaPorUsuario(dc.Context.Activity.From.Id);
 
-            //if (votoDelDia != null)
-            //{
-            //    await dc.Context.SendActivity("Ya votaste hoy! ¬¬");
-            //    await dc.End();
-            //}
-            //else
-            //{
+            if (votoDelDia != null)
+            {
+                await dc.Context.SendActivity("Ya votaste hoy! ¬¬");
+                await dc.End();
+            }
+            else
+            {
                 var state = dc.Context.GetConversationState<ConversationData>();
                 state.Voto = new Voto(dc.Context.Activity.From.Id);
                 state.Restaurants = await _client.GetRestaurants();
@@ -151,7 +151,7 @@ namespace HxLunchBot.Dialogs
                     Choices = choices,
                     RetryPromptActivity = this.GetVoteReprompt(state.Restaurants.Select(x => x.Nombre).ToList())
                 });
-            //}
+            }
         }
 
         private async Task VoteProcessStep(DialogContext dc, IDictionary<string, object> args, SkipStepFunction next)
